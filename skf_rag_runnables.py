@@ -819,7 +819,7 @@ def main():
         layout="wide"
     )
     
-    st.title(" SKF Bearing Intelligent Search System")
+    st.title(" KYVO AI Product Finder")
     # st.markdown("""
     # **Smart bearing search** with natural language understanding and advanced filtering.
     
