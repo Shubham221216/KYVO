@@ -1340,8 +1340,8 @@ def main():
     
     # Header
     st.markdown('<div class="main-header">', unsafe_allow_html=True)
-    st.markdown('<h1 class="main-title">Electronic Component Search Engine</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">Instantly search across millions of components using natural language</p>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title">KYVO AI Product Finder</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Instantly search across components using natural language</p>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Load data
