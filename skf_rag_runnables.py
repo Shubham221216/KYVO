@@ -851,6 +851,7 @@ def main():
         llm = setup_llm(MISTRAL_API_KEY)
     
     st.success(f"✅ Ready! Database: {len(df)} bearings")
+
     
     # Sidebar filters
     with st.sidebar:
@@ -888,7 +889,7 @@ def main():
         height=80
     )
     
-    if st.button("🚀 Search", type="primary", use_container_width=True):
+    if st.button(" Search", type="primaryColor", use_container_width=True):
         if not query.strip():
             st.warning("Please enter a search query")
             return
