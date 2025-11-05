@@ -882,14 +882,14 @@ def main():
         num_results = st.slider("Results to Show", 3, 20, 10, key="num_results")
     
     # Main search
-    st.header("🔎 Search for Bearings")
+    st.header("Search for Bearings")
     query = st.text_area(
         "What bearing do you need?",
         placeholder="e.g., 'bearing for electric motor with 15mm bore'",
         height=80
     )
     
-    if st.button(" Search", type="secondary", use_container_width=True):
+    if st.button("Search", type="primary", use_container_width=True):
         if not query.strip():
             st.warning("Please enter a search query")
             return
