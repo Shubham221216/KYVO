@@ -481,8 +481,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-CSV_FILES = ['SKR-data-0.csv', 'SKF-data-1.csv']
-MISTRAL_API_KEY = 'your_mistral_api_key_here'
+CSV_FILES = ['cleaned_data.csv']
+MISTRAL_API_KEY = '9Lwb0Sbr6L5bqEZxl7PJxdfpTNIzsm2R'
 MISTRAL_MODEL = 'mistral-small-latest'
 
 # ============================================================================
