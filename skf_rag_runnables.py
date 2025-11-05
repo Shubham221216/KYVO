@@ -814,7 +814,7 @@ def display_bearing_result(rank: int, row: pd.Series):
 # ============================================================================
 def main():
     st.set_page_config(
-        page_title="SKF Bearing RAG System",
+        page_title="KYVO AI Product Finder",
         page_icon="⚙️",
         layout="wide"
     )
