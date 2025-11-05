@@ -462,6 +462,514 @@
 
 
 
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# SKF BEARING RAG SYSTEM WITH LANGCHAIN v0.1+ USING RUNNABLES
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+# import streamlit as st
+# import pandas as pd
+# import numpy as np
+# import warnings
+# from typing import List, Tuple, Dict, Any
+
+# warnings.filterwarnings('ignore', category=DeprecationWarning)
+# warnings.filterwarnings('ignore', message='.*deprecated.*')
+
+# # LangChain imports
+# from langchain_mistralai import ChatMistralAI
+# from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+# from langchain_core.documents import Document
+# from langchain_community.vectorstores import FAISS as LangChainFAISS
+# from langchain_huggingface import HuggingFaceEmbeddings
+
+# # ============================================================================
+# # CONFIGURATION
+# # ============================================================================
+# CSV_FILES = ['cleaned_data.csv']
+# MISTRAL_API_KEY = '9Lwb0Sbr6L5bqEZxl7PJxdfpTNIzsm2R'
+# MISTRAL_MODEL = 'mistral-small-latest'
+
+# # ============================================================================
+# # DATA LOADING & PREPROCESSING
+# # ============================================================================
+# @st.cache_data
+# def load_bearing_data(files):
+#     """Load and combine CSV files with deduplication"""
+#     try:
+#         dfs = []
+#         for f in files:
+#             try:
+#                 df = pd.read_csv(f)
+#                 dfs.append(df)
+#             except Exception as e:
+#                 st.warning(f"Could not load {f}: {str(e)}")
+#                 continue
+        
+#         if not dfs:
+#             st.error("No CSV files could be loaded")
+#             return pd.DataFrame()
+        
+#         combined_df = pd.concat(dfs, ignore_index=True)
+#         combined_df = combined_df.dropna(subset=['Designation'])
+#         combined_df = combined_df.drop_duplicates(subset=['Designation'], keep='first')
+#         combined_df = combined_df.reset_index(drop=True)
+#         return combined_df
+#     except Exception as e:
+#         st.error(f"Error loading data: {str(e)}")
+#         return pd.DataFrame()
+
+
+# def create_bearing_documents(df: pd.DataFrame) -> List[Document]:
+#     """Convert bearing data to LangChain Documents"""
+#     documents = []
+    
+#     for idx, row in df.iterrows():
+#         try:
+#             content = f"""
+# Bearing Designation: {row.get('Designation', 'N/A')}
+# Category: {row.get('Category', 'N/A')}
+# Type: {row.get('Short_Description', 'N/A')}
+
+# Technical Specifications:
+# - Bore Diameter: {row.get('Bore diameter (mm)', 'N/A')} mm
+# - Outside Diameter: {row.get('Outside diameter (mm)', 'N/A')} mm
+# - Width: {row.get('Width (mm)', 'N/A')} mm
+# - Dynamic Load Rating: {row.get('Basic dynamic load rating (kN)', 'N/A')} kN
+# - Static Load Rating: {row.get('Basic static load rating (kN)', 'N/A')} kN
+# - Speed Limit: {row.get('Limiting speed (r/min)', 'N/A')} r/min
+# - Weight: {row.get('Product net weight (kg)', 'N/A')} kg
+# - Material: {row.get('Material, bearing', 'N/A')}
+# - Sealing: {row.get('Sealing', 'N/A')}
+
+# Key Benefits:
+# {row.get('Benefits', 'N/A')}
+#             """.strip()
+            
+#             metadata = {
+#                 'designation': str(row.get('Designation', 'N/A')),
+#                 'category': str(row.get('Category', 'N/A')),
+#                 'bore_diameter': float(row.get('Bore diameter (mm)', 0)) if pd.notna(row.get('Bore diameter (mm)')) else 0,
+#                 'outside_diameter': float(row.get('Outside diameter (mm)', 0)) if pd.notna(row.get('Outside diameter (mm)')) else 0,
+#                 'dynamic_load': float(row.get('Basic dynamic load rating (kN)', 0)) if pd.notna(row.get('Basic dynamic load rating (kN)')) else 0,
+#                 'static_load': float(row.get('Basic static load rating (kN)', 0)) if pd.notna(row.get('Basic static load rating (kN)')) else 0,
+#                 'speed_limit': float(row.get('Limiting speed (r/min)', 0)) if pd.notna(row.get('Limiting speed (r/min)')) else 0,
+#                 'max_temp': float(row.get('Maximum operating temperature (°C)', 0)) if pd.notna(row.get('Maximum operating temperature (°C)')) else 0,
+#                 'min_temp': float(row.get('Minimum operating temperature (°C)', 0)) if pd.notna(row.get('Minimum operating temperature (°C)')) else 0,
+#                 'photo_url': str(row.get('Photo_URL', '')) if pd.notna(row.get('Photo_URL')) else '',
+#                 'sealing': str(row.get('Sealing', 'N/A')) if pd.notna(row.get('Sealing')) else 'N/A',
+#                 'index': idx
+#             }
+            
+#             doc = Document(page_content=content, metadata=metadata)
+#             documents.append(doc)
+#         except Exception as e:
+#             st.warning(f"Error processing row {idx}: {str(e)}")
+#             continue
+    
+#     return documents
+
+
+# # ============================================================================
+# # SAFE UNIQUE VALUES EXTRACTION
+# # ============================================================================
+# def get_safe_unique_values(df: pd.DataFrame, column_name: str) -> List[str]:
+#     """Safely extract unique values from a column, handling mixed types"""
+#     try:
+#         if column_name not in df.columns:
+#             return []
+        
+#         # Convert all values to string, filtering out NaN
+#         unique_vals = []
+#         for val in df[column_name].unique():
+#             if pd.notna(val):  # Skip NaN values
+#                 str_val = str(val).strip()
+#                 if str_val and str_val.lower() != 'nan':  # Skip empty strings and 'nan'
+#                     unique_vals.append(str_val)
+        
+#         # Remove duplicates and sort
+#         unique_vals = list(set(unique_vals))
+#         unique_vals.sort()
+#         return unique_vals
+#     except Exception as e:
+#         st.warning(f"Error extracting unique values from {column_name}: {str(e)}")
+#         return []
+
+
+# # ============================================================================
+# # VECTOR STORE SETUP
+# # ============================================================================
+# @st.cache_resource
+# def setup_vector_store(documents: List[Document]):
+#     """Create and cache vector store"""
+#     try:
+#         embeddings = HuggingFaceEmbeddings(model_name='all-MiniLM-L6-v2')
+#         vector_store = LangChainFAISS.from_documents(documents, embeddings)
+#         return vector_store, embeddings
+#     except Exception as e:
+#         st.error(f"Error setting up vector store: {str(e)}")
+#         return None, None
+
+
+# # ============================================================================
+# # LLM SETUP
+# # ============================================================================
+# @st.cache_resource
+# def setup_llm(api_key: str):
+#     """Initialize Mistral LLM"""
+#     try:
+#         return ChatMistralAI(
+#             api_key=api_key,
+#             model=MISTRAL_MODEL,
+#             temperature=0.3,
+#             max_tokens=500
+#         )
+#     except Exception as e:
+#         st.error(f"Error setting up LLM: {str(e)}")
+#         return None
+
+
+# # ============================================================================
+# # QUERY ANALYSIS
+# # ============================================================================
+# def analyze_user_query(user_query: str, llm) -> Dict[str, Any]:
+#     """Analyze user input to extract requirements"""
+    
+#     if not llm:
+#         return {
+#             "bearing_type": "All",
+#             "speed_requirement": "not specified",
+#             "load_requirement": "not specified",
+#             "confidence": 0.0
+#         }
+    
+#     analysis_prompt = ChatPromptTemplate.from_template("""
+# You are a bearing specification analyzer. Analyze this query and extract key requirements.
+
+# Query: {query}
+
+# Return JSON with: bearing_type, speed_requirement, load_requirement, confidence (0-1).
+# Return ONLY valid JSON, no other text.
+# """)
+    
+#     chain = analysis_prompt | llm
+    
+#     try:
+#         response = chain.invoke({"query": user_query})
+#         content = response.content if hasattr(response, 'content') else str(response)
+        
+#         import json
+#         import re
+        
+#         json_match = re.search(r'\{.*\}', content, re.DOTALL)
+#         if json_match:
+#             return json.loads(json_match.group())
+#         else:
+#             return {}
+#     except Exception as e:
+#         st.warning(f"Query analysis error: {str(e)}")
+#         return {}
+
+
+# # ============================================================================
+# # FILTERING FUNCTION
+# # ============================================================================
+# def apply_filters(results: List[Tuple], filters: Dict, df: pd.DataFrame) -> List[Tuple]:
+#     """Apply user-selected filters to results"""
+    
+#     if not filters or not any(filters.values()):
+#         return results
+    
+#     filtered = []
+    
+#     for idx, row, score in results:
+#         keep = True
+        
+#         # Category filter
+#         if keep and filters.get('category') and filters['category'] != 'All':
+#             try:
+#                 if str(row.get('Category', 'N/A')).strip() != filters['category']:
+#                     keep = False
+#             except:
+#                 pass
+        
+#         # Bore diameter filter
+#         if keep and filters.get('bore_min') is not None:
+#             try:
+#                 bore = float(row.get('Bore diameter (mm)', 0))
+#                 if bore < filters['bore_min']:
+#                     keep = False
+#             except:
+#                 pass
+        
+#         if keep and filters.get('bore_max') is not None:
+#             try:
+#                 bore = float(row.get('Bore diameter (mm)', 0))
+#                 if bore > filters['bore_max']:
+#                     keep = False
+#             except:
+#                 pass
+        
+#         # Speed filter
+#         if keep and filters.get('speed_min') is not None and filters['speed_min'] > 0:
+#             try:
+#                 speed = float(row.get('Limiting speed (r/min)', 0))
+#                 if speed < filters['speed_min']:
+#                     keep = False
+#             except:
+#                 pass
+        
+#         # Load filter
+#         if keep and filters.get('load_min') is not None and filters['load_min'] > 0:
+#             try:
+#                 load = float(row.get('Basic dynamic load rating (kN)', 0))
+#                 if load < filters['load_min']:
+#                     keep = False
+#             except:
+#                 pass
+        
+#         # Sealing filter
+#         if keep and filters.get('sealing') and filters['sealing'] != 'All':
+#             try:
+#                 bearing_sealing = str(row.get('Sealing', 'N/A')).lower().strip()
+#                 filter_sealing = str(filters['sealing']).lower().strip()
+#                 if bearing_sealing != filter_sealing:
+#                     keep = False
+#             except:
+#                 pass
+        
+#         if keep:
+#             filtered.append((idx, row, score))
+    
+#     return filtered
+
+
+# # ============================================================================
+# # RANKING FUNCTION
+# # ============================================================================
+# def rank_results(results: List[Tuple], df: pd.DataFrame) -> List[Tuple]:
+#     """Simple ranking by vector similarity"""
+    
+#     scored = []
+#     for idx, row, score in results:
+#         # Normalize score (lower L2 distance = higher similarity)
+#         normalized = 1.0 / (1.0 + score)
+#         scored.append((idx, row, float(normalized * 100)))
+    
+#     # Sort by score
+#     scored.sort(key=lambda x: x[2], reverse=True)
+    
+#     return scored
+
+
+# # ============================================================================
+# # DISPLAY BEARING RESULT
+# # ============================================================================
+# def display_bearing_result(rank: int, row: pd.Series):
+#     """Display a bearing result with image and specs"""
+    
+#     with st.container():
+#         # Header
+#         col1, col2 = st.columns([1, 3])
+#         with col1:
+#             st.markdown(f"### #{rank}. {row.get('Designation', 'N/A')}")
+#         with col2:
+#             st.markdown(f"**Category:** `{row.get('Category', 'N/A')}`")
+        
+#         # Image and specs
+#         img_col, spec_col = st.columns([2, 3])
+        
+#         with img_col:
+#             st.markdown("#### Image")
+#             photo_url = row.get('Photo_URL', '')
+            
+#             if pd.notna(photo_url) and photo_url and photo_url != '':
+#                 try:
+#                     st.image(photo_url, use_column_width=True, caption=f"SKF {row.get('Designation', 'N/A')}")
+#                 except:
+#                     st.info("📷 Image not available")
+#             else:
+#                 st.info("📷 Image not available")
+        
+#         with spec_col:
+#             st.markdown("#### 📊 Specifications")
+            
+#             st.write(f"**Bore:** {row.get('Bore diameter (mm)', 'N/A')} mm")
+#             st.write(f"**Outer:** {row.get('Outside diameter (mm)', 'N/A')} mm")
+#             st.write(f"**Width:** {row.get('Width (mm)', 'N/A')} mm")
+            
+#             st.divider()
+            
+#             st.write(f"**Dynamic Load:** {row.get('Basic dynamic load rating (kN)', 'N/A')} kN")
+#             st.write(f"**Speed Limit:** {row.get('Limiting speed (r/min)', 'N/A')} r/min")
+#             st.write(f"**Material:** {row.get('Material, bearing', 'N/A')}")
+#             st.write(f"**Sealing:** {row.get('Sealing', 'N/A')}")
+        
+#         # Description
+#         with st.expander("📝 Full Details"):
+#             st.write(f"**Short Description:** {row.get('Short_Description', 'N/A')}")
+#             st.write(f"**Benefits:** {row.get('Benefits', 'N/A')}")
+#             st.write(f"**Description:** {row.get('Long_Description', 'N/A')}")
+        
+#         st.divider()
+
+
+# # ============================================================================
+# # MAIN APPLICATION
+# # ============================================================================
+# def main():
+#     st.set_page_config(
+#         page_title="KYVO AI Product Finder",
+#         page_icon="⚙️",
+#         layout="wide"
+#     )
+    
+#     st.title(" KYVO AI Product Finder")
+#     # st.markdown("""
+#     # **Smart bearing search** with natural language understanding and advanced filtering.
+    
+#     # 1.  **Describe** what you need
+#     # 2.  **Refine** with filters (optional)
+#     # 3.  **Get** best matches with images and specs
+#     # """)
+    
+#     # Load data
+#     with st.spinner("Loading bearing database..."):
+#         df = load_bearing_data(CSV_FILES)
+        
+#         if df.empty:
+#             st.error("Failed to load bearing data. Please check your CSV files.")
+#             return
+        
+#         documents = create_bearing_documents(df)
+        
+#         if not documents:
+#             st.error("No documents created from data.")
+#             return
+        
+#         vector_store, embeddings = setup_vector_store(documents)
+        
+#         if vector_store is None or embeddings is None:
+#             st.error("Failed to set up vector store.")
+#             return
+        
+#         llm = setup_llm(MISTRAL_API_KEY)
+    
+#     st.success(f"✅ Ready! Database: {len(df)} bearings")
+
+    
+#     # Sidebar filters
+#     with st.sidebar:
+#         st.header("🔎 Filters (Optional)")
+        
+#         # Category filter - SAFE extraction
+#         categories = ['All'] + get_safe_unique_values(df, 'Category')
+#         selected_category = st.selectbox("Bearing Type", categories, key="cat_filter")
+        
+#         # Bore diameter filter
+#         st.subheader("Bore Diameter (mm)")
+#         bore_min = st.number_input("Min", value=0.0, key="bore_min")
+#         bore_max = st.number_input("Max", value=1000.0, key="bore_max")
+        
+#         # Speed filter
+#         st.subheader("Speed (r/min)")
+#         speed_min = st.number_input("Min Speed", value=0, step=1000, key="speed")
+        
+#         # Load filter
+#         st.subheader("Load (kN)")
+#         load_min = st.number_input("Min Load", value=0.0, key="load")
+        
+#         # Sealing filter - SAFE extraction
+#         sealings = ['All'] + get_safe_unique_values(df, 'Sealing')
+#         selected_sealing = st.selectbox("Sealing Type", sealings, key="seal_filter")
+        
+#         # Results
+#         num_results = st.slider("Results to Show", 3, 20, 10, key="num_results")
+    
+#     # Main search
+#     st.header("Search for Bearings")
+#     query = st.text_area(
+#         "What bearing do you need?",
+#         placeholder="e.g., 'bearing for electric motor with 15mm bore'",
+#         height=80
+#     )
+    
+#     if st.button("Search", type="primary", use_container_width=True):
+#         if not query.strip():
+#             st.warning("Please enter a search query")
+#             return
+        
+#         with st.spinner("Searching..."):
+#             try:
+#                 # Step 1: Analyze query
+#                 st.write("🔍 Analyzing requirements...")
+#                 analysis = analyze_user_query(query, llm)
+                
+#                 # Step 2: Vector search
+#                 st.write("📊 Searching database...")
+#                 docs_with_scores = vector_store.similarity_search_with_score(query, k=30)
+                
+#                 results = []
+#                 seen = set()
+#                 for doc, score in docs_with_scores:
+#                     desig = doc.metadata.get('designation', 'unknown')
+#                     if desig not in seen:
+#                         idx = doc.metadata.get('index', -1)
+#                         if 0 <= idx < len(df):
+#                             row = df.iloc[idx]
+#                             results.append((idx, row, score))
+#                             seen.add(desig)
+#                             if len(results) >= 30:
+#                                 break
+                
+#                 st.write(f"Found {len(results)} candidates")
+                
+#                 # Step 3: Apply filters
+#                 st.write("🔎 Applying filters...")
+#                 filters = {
+#                     'category': selected_category,
+#                     'bore_min': bore_min if bore_min > 0 else None,
+#                     'bore_max': bore_max if bore_max < 1000 else None,
+#                     'speed_min': speed_min if speed_min > 0 else None,
+#                     'load_min': load_min if load_min > 0 else None,
+#                     'sealing': selected_sealing,
+#                 }
+                
+#                 results = apply_filters(results, filters, df)
+#                 st.write(f"After filters: {len(results)} results")
+                
+#                 # Step 4: Rank
+#                 st.write("🏆 Ranking results...")
+#                 results = rank_results(results, df)
+                
+#                 st.divider()
+                
+#                 if results:
+#                     st.success(f"✅ Found {len(results)} matching bearings")
+                    
+#                     # Display results
+#                     for rank, (idx, row, score) in enumerate(results[:num_results], 1):
+#                         display_bearing_result(rank, row)
+#                 else:
+#                     st.warning("❌ No bearings match your criteria. Try adjusting filters.")
+            
+#             except Exception as e:
+#                 st.error(f"Error during search: {str(e)}")
+#                 import traceback
+#                 st.error(traceback.format_exc())
+
+
+# if __name__ == "__main__":
+#     main()
+
+
+
+
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+#--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -574,15 +1082,13 @@ def get_safe_unique_values(df: pd.DataFrame, column_name: str) -> List[str]:
         if column_name not in df.columns:
             return []
         
-        # Convert all values to string, filtering out NaN
         unique_vals = []
         for val in df[column_name].unique():
-            if pd.notna(val):  # Skip NaN values
+            if pd.notna(val):
                 str_val = str(val).strip()
-                if str_val and str_val.lower() != 'nan':  # Skip empty strings and 'nan'
+                if str_val and str_val.lower() != 'nan':
                     unique_vals.append(str_val)
         
-        # Remove duplicates and sort
         unique_vals = list(set(unique_vals))
         unique_vals.sort()
         return unique_vals
@@ -680,7 +1186,6 @@ def apply_filters(results: List[Tuple], filters: Dict, df: pd.DataFrame) -> List
     for idx, row, score in results:
         keep = True
         
-        # Category filter
         if keep and filters.get('category') and filters['category'] != 'All':
             try:
                 if str(row.get('Category', 'N/A')).strip() != filters['category']:
@@ -688,7 +1193,6 @@ def apply_filters(results: List[Tuple], filters: Dict, df: pd.DataFrame) -> List
             except:
                 pass
         
-        # Bore diameter filter
         if keep and filters.get('bore_min') is not None:
             try:
                 bore = float(row.get('Bore diameter (mm)', 0))
@@ -705,7 +1209,6 @@ def apply_filters(results: List[Tuple], filters: Dict, df: pd.DataFrame) -> List
             except:
                 pass
         
-        # Speed filter
         if keep and filters.get('speed_min') is not None and filters['speed_min'] > 0:
             try:
                 speed = float(row.get('Limiting speed (r/min)', 0))
@@ -714,7 +1217,6 @@ def apply_filters(results: List[Tuple], filters: Dict, df: pd.DataFrame) -> List
             except:
                 pass
         
-        # Load filter
         if keep and filters.get('load_min') is not None and filters['load_min'] > 0:
             try:
                 load = float(row.get('Basic dynamic load rating (kN)', 0))
@@ -723,7 +1225,6 @@ def apply_filters(results: List[Tuple], filters: Dict, df: pd.DataFrame) -> List
             except:
                 pass
         
-        # Sealing filter
         if keep and filters.get('sealing') and filters['sealing'] != 'All':
             try:
                 bearing_sealing = str(row.get('Sealing', 'N/A')).lower().strip()
@@ -747,11 +1248,9 @@ def rank_results(results: List[Tuple], df: pd.DataFrame) -> List[Tuple]:
     
     scored = []
     for idx, row, score in results:
-        # Normalize score (lower L2 distance = higher similarity)
         normalized = 1.0 / (1.0 + score)
         scored.append((idx, row, float(normalized * 100)))
     
-    # Sort by score
     scored.sort(key=lambda x: x[2], reverse=True)
     
     return scored
@@ -764,47 +1263,42 @@ def display_bearing_result(rank: int, row: pd.Series):
     """Display a bearing result with image and specs"""
     
     with st.container():
-        # Header
-        col1, col2 = st.columns([1, 3])
+        col1, col2 = st.columns([1, 2])
+        
         with col1:
-            st.markdown(f"### #{rank}. {row.get('Designation', 'N/A')}")
-        with col2:
-            st.markdown(f"**Category:** `{row.get('Category', 'N/A')}`")
-        
-        # Image and specs
-        img_col, spec_col = st.columns([2, 3])
-        
-        with img_col:
-            st.markdown("#### Image")
             photo_url = row.get('Photo_URL', '')
-            
             if pd.notna(photo_url) and photo_url and photo_url != '':
                 try:
-                    st.image(photo_url, use_column_width=True, caption=f"SKF {row.get('Designation', 'N/A')}")
+                    st.image(photo_url, use_column_width=True)
                 except:
                     st.info("📷 Image not available")
             else:
                 st.info("📷 Image not available")
         
-        with spec_col:
-            st.markdown("#### 📊 Specifications")
+        with col2:
+            st.markdown(f"### {row.get('Designation', 'N/A')}")
+            st.caption(f"{row.get('Category', 'N/A')} • {row.get('Short_Description', 'N/A')}")
             
-            st.write(f"**Bore:** {row.get('Bore diameter (mm)', 'N/A')} mm")
-            st.write(f"**Outer:** {row.get('Outside diameter (mm)', 'N/A')} mm")
-            st.write(f"**Width:** {row.get('Width (mm)', 'N/A')} mm")
+            spec_col1, spec_col2, spec_col3 = st.columns(3)
             
-            st.divider()
+            with spec_col1:
+                st.metric("Bore Ø", f"{row.get('Bore diameter (mm)', 'N/A')} mm")
+                st.metric("Dynamic Load", f"{row.get('Basic dynamic load rating (kN)', 'N/A')} kN")
             
-            st.write(f"**Dynamic Load:** {row.get('Basic dynamic load rating (kN)', 'N/A')} kN")
-            st.write(f"**Speed Limit:** {row.get('Limiting speed (r/min)', 'N/A')} r/min")
+            with spec_col2:
+                st.metric("Outer Ø", f"{row.get('Outside diameter (mm)', 'N/A')} mm")
+                st.metric("Speed Limit", f"{row.get('Limiting speed (r/min)', 'N/A')} r/min")
+            
+            with spec_col3:
+                st.metric("Width", f"{row.get('Width (mm)', 'N/A')} mm")
+                st.metric("Weight", f"{row.get('Product net weight (kg)', 'N/A')} kg")
+        
+        with st.expander("View Details"):
             st.write(f"**Material:** {row.get('Material, bearing', 'N/A')}")
             st.write(f"**Sealing:** {row.get('Sealing', 'N/A')}")
-        
-        # Description
-        with st.expander("📝 Full Details"):
-            st.write(f"**Short Description:** {row.get('Short_Description', 'N/A')}")
-            st.write(f"**Benefits:** {row.get('Benefits', 'N/A')}")
             st.write(f"**Description:** {row.get('Long_Description', 'N/A')}")
+            if pd.notna(row.get('Benefits')) and row.get('Benefits') != 'N/A':
+                st.write(f"**Benefits:** {row.get('Benefits', 'N/A')}")
         
         st.divider()
 
@@ -814,22 +1308,44 @@ def display_bearing_result(rank: int, row: pd.Series):
 # ============================================================================
 def main():
     st.set_page_config(
-        page_title="KYVO AI Product Finder",
-        page_icon="⚙️",
+        page_title="Electronic Component Search",
+        page_icon="🔍",
         layout="wide"
     )
     
-    st.title(" KYVO AI Product Finder")
-    # st.markdown("""
-    # **Smart bearing search** with natural language understanding and advanced filtering.
+    # Custom CSS for professional look
+    st.markdown("""
+        <style>
+        .main-header {
+            text-align: center;
+            padding: 2rem 0 1rem 0;
+        }
+        .main-title {
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 0.5rem;
+        }
+        .subtitle {
+            font-size: 1rem;
+            color: #6b7280;
+            margin-bottom: 2rem;
+        }
+        .stButton>button {
+            border-radius: 25px;
+            padding: 0.5rem 2rem;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
-    # 1.  **Describe** what you need
-    # 2.  **Refine** with filters (optional)
-    # 3.  **Get** best matches with images and specs
-    # """)
+    # Header
+    st.markdown('<div class="main-header">', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title">Electronic Component Search Engine</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Instantly search across millions of components using natural language</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Load data
-    with st.spinner("Loading bearing database..."):
+    with st.spinner("Loading component database..."):
         df = load_bearing_data(CSV_FILES)
         
         if df.empty:
@@ -850,77 +1366,78 @@ def main():
         
         llm = setup_llm(MISTRAL_API_KEY)
     
-    st.success(f"✅ Ready! Database: {len(df)} bearings")
-
+    # Initialize session state
+    if 'search_performed' not in st.session_state:
+        st.session_state.search_performed = False
+    if 'search_results' not in st.session_state:
+        st.session_state.search_results = []
     
-    # Sidebar filters
-    with st.sidebar:
-        st.header("🔎 Filters (Optional)")
-        
-        # Category filter - SAFE extraction
-        categories = ['All'] + get_safe_unique_values(df, 'Category')
-        selected_category = st.selectbox("Bearing Type", categories, key="cat_filter")
-        
-        # Bore diameter filter
-        st.subheader("Bore Diameter (mm)")
-        bore_min = st.number_input("Min", value=0.0, key="bore_min")
-        bore_max = st.number_input("Max", value=1000.0, key="bore_max")
-        
-        # Speed filter
-        st.subheader("Speed (r/min)")
-        speed_min = st.number_input("Min Speed", value=0, step=1000, key="speed")
-        
-        # Load filter
-        st.subheader("Load (kN)")
-        load_min = st.number_input("Min Load", value=0.0, key="load")
-        
-        # Sealing filter - SAFE extraction
-        sealings = ['All'] + get_safe_unique_values(df, 'Sealing')
-        selected_sealing = st.selectbox("Sealing Type", sealings, key="seal_filter")
-        
-        # Results
-        num_results = st.slider("Results to Show", 3, 20, 10, key="num_results")
+    # Search bar
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        query = st.text_input(
+            "Search",
+            placeholder="Show me Accelerometers with a low power mode...",
+            label_visibility="collapsed"
+        )
+    with col2:
+        search_button = st.button("Search", type="primary", use_container_width=True)
     
-    # Main search
-    st.header("Search for Bearings")
-    query = st.text_area(
-        "What bearing do you need?",
-        placeholder="e.g., 'bearing for electric motor with 15mm bore'",
-        height=80
-    )
-    
-    if st.button("Search", type="primary", use_container_width=True):
+    # Perform search
+    if search_button:
         if not query.strip():
             st.warning("Please enter a search query")
-            return
+        else:
+            with st.spinner("Searching..."):
+                try:
+                    docs_with_scores = vector_store.similarity_search_with_score(query, k=30)
+                    
+                    results = []
+                    seen = set()
+                    for doc, score in docs_with_scores:
+                        desig = doc.metadata.get('designation', 'unknown')
+                        if desig not in seen:
+                            idx = doc.metadata.get('index', -1)
+                            if 0 <= idx < len(df):
+                                row = df.iloc[idx]
+                                results.append((idx, row, score))
+                                seen.add(desig)
+                                if len(results) >= 30:
+                                    break
+                    
+                    results = rank_results(results, df)
+                    st.session_state.search_results = results
+                    st.session_state.search_performed = True
+                    
+                except Exception as e:
+                    st.error(f"Error during search: {str(e)}")
+    
+    # Show filters and results only after search
+    if st.session_state.search_performed:
+        st.divider()
         
-        with st.spinner("Searching..."):
-            try:
-                # Step 1: Analyze query
-                st.write("🔍 Analyzing requirements...")
-                analysis = analyze_user_query(query, llm)
+        # Filters in columns
+        with st.expander("🔎 Refine Results", expanded=False):
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                categories = ['All'] + get_safe_unique_values(df, 'Category')
+                selected_category = st.selectbox("Component Type", categories)
                 
-                # Step 2: Vector search
-                st.write("📊 Searching database...")
-                docs_with_scores = vector_store.similarity_search_with_score(query, k=30)
+                bore_min = st.number_input("Min Bore Diameter (mm)", value=0.0, min_value=0.0)
+                bore_max = st.number_input("Max Bore Diameter (mm)", value=1000.0, min_value=0.0)
+            
+            with col2:
+                speed_min = st.number_input("Min Speed (r/min)", value=0, step=1000)
+                load_min = st.number_input("Min Load (kN)", value=0.0)
+            
+            with col3:
+                sealings = ['All'] + get_safe_unique_values(df, 'Sealing')
+                selected_sealing = st.selectbox("Sealing Type", sealings)
                 
-                results = []
-                seen = set()
-                for doc, score in docs_with_scores:
-                    desig = doc.metadata.get('designation', 'unknown')
-                    if desig not in seen:
-                        idx = doc.metadata.get('index', -1)
-                        if 0 <= idx < len(df):
-                            row = df.iloc[idx]
-                            results.append((idx, row, score))
-                            seen.add(desig)
-                            if len(results) >= 30:
-                                break
-                
-                st.write(f"Found {len(results)} candidates")
-                
-                # Step 3: Apply filters
-                st.write("🔎 Applying filters...")
+                num_results = st.slider("Results to Show", 5, 20, 10)
+            
+            if st.button("Apply Filters", use_container_width=True):
                 filters = {
                     'category': selected_category,
                     'bore_min': bore_min if bore_min > 0 else None,
@@ -930,28 +1447,17 @@ def main():
                     'sealing': selected_sealing,
                 }
                 
-                results = apply_filters(results, filters, df)
-                st.write(f"After filters: {len(results)} results")
-                
-                # Step 4: Rank
-                st.write("🏆 Ranking results...")
-                results = rank_results(results, df)
-                
-                st.divider()
-                
-                if results:
-                    st.success(f"✅ Found {len(results)} matching bearings")
-                    
-                    # Display results
-                    for rank, (idx, row, score) in enumerate(results[:num_results], 1):
-                        display_bearing_result(rank, row)
-                else:
-                    st.warning("❌ No bearings match your criteria. Try adjusting filters.")
-            
-            except Exception as e:
-                st.error(f"Error during search: {str(e)}")
-                import traceback
-                st.error(traceback.format_exc())
+                filtered_results = apply_filters(st.session_state.search_results, filters, df)
+                st.session_state.search_results = filtered_results
+        
+        # Display results
+        st.markdown(f"### Results ({len(st.session_state.search_results)} found)")
+        
+        if st.session_state.search_results:
+            for rank, (idx, row, score) in enumerate(st.session_state.search_results[:num_results if 'num_results' in locals() else 10], 1):
+                display_bearing_result(rank, row)
+        else:
+            st.info("No components match your criteria. Try adjusting your filters.")
 
 
 if __name__ == "__main__":
