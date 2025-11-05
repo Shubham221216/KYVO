@@ -775,7 +775,7 @@ def display_bearing_result(rank: int, row: pd.Series):
         img_col, spec_col = st.columns([2, 3])
         
         with img_col:
-            st.markdown("#### 📸 Image")
+            st.markdown("#### Image")
             photo_url = row.get('Photo_URL', '')
             
             if pd.notna(photo_url) and photo_url and photo_url != '':
@@ -819,14 +819,14 @@ def main():
         layout="wide"
     )
     
-    st.title("🏆 SKF Bearing Intelligent Search System")
-    st.markdown("""
-    **Smart bearing search** with natural language understanding and advanced filtering.
+    st.title(" SKF Bearing Intelligent Search System")
+    # st.markdown("""
+    # **Smart bearing search** with natural language understanding and advanced filtering.
     
-    1. 🔍 **Describe** what you need
-    2. 🔎 **Refine** with filters (optional)
-    3. 📊 **Get** best matches with images and specs
-    """)
+    # 1.  **Describe** what you need
+    # 2.  **Refine** with filters (optional)
+    # 3.  **Get** best matches with images and specs
+    # """)
     
     # Load data
     with st.spinner("Loading bearing database..."):
