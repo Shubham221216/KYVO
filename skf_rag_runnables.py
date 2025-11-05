@@ -889,7 +889,7 @@ def main():
         height=80
     )
     
-    if st.button(" Search", type="primaryColor", use_container_width=True):
+    if st.button(" Search", type="secondary", use_container_width=True):
         if not query.strip():
             st.warning("Please enter a search query")
             return
