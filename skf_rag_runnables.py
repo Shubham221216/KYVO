@@ -960,7 +960,6 @@
 #     main()
 
 
-
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 # SKF BEARING RAG SYSTEM WITH LANGCHAIN v0.1+ USING RUNNABLES - PROFESSIONAL UI
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1498,6 +1497,10 @@ def main():
         st.session_state.search_results = []
     if 'view_mode' not in st.session_state:
         st.session_state.view_mode = 'grid'
+    if 'current_query' not in st.session_state:
+        st.session_state.current_query = ''
+    if 'selected_prompt' not in st.session_state:
+        st.session_state.selected_prompt = ''
     
     # Header
     st.markdown("""
@@ -1540,6 +1543,7 @@ def main():
         # Search bar
         query = st.text_input(
             "Search",
+            value=st.session_state.selected_prompt,
             placeholder="Show me Accelerometers with a low power mode...",
             label_visibility="collapsed",
             key="search_input"
@@ -1552,7 +1556,9 @@ def main():
         for idx, prompt in enumerate(SAMPLE_PROMPTS):
             with cols[idx % 2]:
                 if st.button(prompt, key=f"prompt_{idx}", use_container_width=True):
-                    st.session_state.search_input = prompt
+                    st.session_state.selected_prompt = prompt
+                    st.session_state.current_query = prompt
+                    st.session_state.search_performed = True
                     st.rerun()
         
         # How it works
@@ -1584,6 +1590,7 @@ def main():
             if query and query.strip():
                 st.session_state.search_performed = True
                 st.session_state.current_query = query
+                st.session_state.selected_prompt = ''
                 st.rerun()
     
     # Results view
@@ -1735,6 +1742,7 @@ def main():
             st.session_state.search_performed = False
             st.session_state.search_results = []
             st.session_state.current_query = ""
+            st.session_state.selected_prompt = ""
             st.rerun()
 
 
