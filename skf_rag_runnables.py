@@ -982,7 +982,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-CSV_FILES = ['ai_studio_code.csv']
+CSV_FILES = ['cleaned_data.csv']
 MISTRAL_API_KEY = '9Lwb0Sbr6L5bqEZxl7PJxdfpTNIzsm2R'
 MISTRAL_MODEL = 'mistral-small-latest'
 
